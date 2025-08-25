@@ -48,7 +48,6 @@
             padding: 2rem;
         }
 
-        /* Header with logo and glow effect */
         .header {
             text-align: center;
             margin-bottom: 2rem;
@@ -98,10 +97,21 @@
             font-size: 2.2rem;
             font-weight: 700;
             margin-bottom: 0.5rem;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        h1 span.text {
             background: linear-gradient(90deg, var(--neon-purple), var(--neon-blue));
             -webkit-background-clip: text;
             background-clip: text;
             color: transparent;
+        }
+
+        h1 span.emoji {
+            margin-right: 0.5rem;
+            font-size: 1.8rem;
+            color: var(--text-primary); /* Ensure emoji is not affected by gradient */
         }
 
         .subtitle {
@@ -111,7 +121,6 @@
             text-align: center;
         }
 
-        /* Main decryptor card */
         .decryptor-card {
             background: rgba(26, 26, 46, 0.7);
             border-radius: var(--border-radius-lg);
@@ -121,7 +130,6 @@
             backdrop-filter: blur(10px);
         }
 
-        /* File input section */
         .file-input-section {
             margin-bottom: 1.5rem;
         }
@@ -167,7 +175,6 @@
             color: var(--text-secondary);
         }
 
-        /* Form elements */
         .form-group {
             margin-bottom: 1.5rem;
         }
@@ -199,7 +206,6 @@
             color: var(--text-secondary);
         }
 
-        /* Action buttons */
         .decrypt-btn {
             display: block;
             width: 100%;
@@ -221,7 +227,6 @@
             box-shadow: 0 5px 15px rgba(114, 9, 183, 0.4);
         }
 
-        /* Status and loader */
         .status-container {
             margin-top: 1.5rem;
             text-align: center;
@@ -255,7 +260,7 @@
         }
 
         .success {
-            background: rgba(76, 175, 80, 0.2);
+            background: rgba( поселение76, 175, 80, 0.2);
             color: var(--success);
             display: block;
         }
@@ -266,7 +271,6 @@
             display: block;
         }
 
-        /* Download button */
         .download-section {
             margin-top: 1.5rem;
             text-align: center;
@@ -285,7 +289,7 @@
             transition: var(--transition);
             text-decoration: none;
             box-shadow: var(--shadow-sm);
-            margin-top: 1rem;
+            margin: 0.5rem;
         }
 
         .download-btn:hover {
@@ -293,7 +297,6 @@
             box-shadow: 0 5px 15px rgba(114, 9, 183, 0.4);
         }
 
-        /* Info panel */
         .info-panel {
             background: rgba(26, 26, 46, 0.5);
             border-radius: var(--border-radius-lg);
@@ -323,14 +326,23 @@
             font-size: 0.9rem;
         }
 
-        /* Responsive design */
+        .file-list {
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 1rem;
+        }
+
+        .file-item {
+            padding: 0.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 1rem;
             }
         }
 
-        /* Glass morphism effect for cards */
         .glass-card {
             background: rgba(255, 255, 255, 0.05);
             backdrop-filter: blur(10px);
@@ -344,17 +356,17 @@
             <div class="logo-container">
                 <div class="logo"></div>
             </div>
-            <h1>🔐 Дешифратор Фотографий</h1>
-            <p class="subtitle">Загрузите зашифрованное фото и введите пароль для расшифровки.</p>
+            <h1><span class="emoji">🔐</span><span class="text"> Дешифратор Фотографий</span></h1>
+            <p class="subtitle">Загрузите зашифрованные файлы и введите пароль для расшифровки.</p>
         </header>
 
         <div class="decryptor-card glass-card">
             <div class="form-group">
-                <label for="file-upload" class="form-label">Выберите зашифрованный файл:</label>
-                <label for="file-upload" class="file-input-label">Выбрать файл</label>
-                <input type="file" id="file-upload" accept="*/*">
+                <label for="file-upload" class="form-label">Выберите зашифрованные файлы:</label>
+                <label for="file-upload" class="file-input-label">Выбрать файлы</label>
+                <input type="file" id="file-upload" accept="*/*" multiple>
                 <div class="file-info" id="file-info">
-                    <div class="file-name" id="file-name">Файл не выбран</div>
+                    <div class="file-list" id="file-list"></div>
                 </div>
             </div>
 
@@ -363,7 +375,7 @@
                 <input type="password" id="password" class="form-input" placeholder="Введите пароль">
             </div>
 
-            <button class="decrypt-btn" onclick="decryptFile()">Расшифровать</button>
+            <button class="decrypt-btn" onclick="decryptFiles()">Расшифровать все</button>
 
             <div class="loader" id="loader">
                 <div class="spinner"></div>
@@ -372,7 +384,8 @@
             <div class="status-message" id="status"></div>
 
             <div class="download-section" id="download-section">
-                <a class="download-btn" id="downloadLink" style="display: none;"></a>
+                <button class="download-btn" id="downloadAll" style="display: none;" onclick="downloadAllFiles()">Скачать все</button>
+                <div id="download-links"></div>
             </div>
         </div>
 
@@ -383,12 +396,13 @@
                 <p><strong>Хеширование пароля:</strong> SHA-256</p>
                 <p><strong>Вектор инициализации:</strong> первые 16 байт файла</p>
             </div>
-            <p>Инструмент расшифровывает файлы, зашифрованные в приложении GeoLens. Если файл не расшифровался, проверьте правильность пароля или целостность файла.</p>
+            <p>Инструмент расшифровывает файлы, зашифрованные в приложении GeoLens. Если файлы не расшифровались, проверьте правильность пароля или целостность файлов.</p>
         </div>
     </div>
 
     <script>
-        let currentFile = null;
+        let selectedFiles = [];
+        let decryptedFiles = [];
 
         function formatFileSize(bytes) {
             if (bytes === 0) return '0 Bytes';
@@ -399,64 +413,59 @@
         }
 
         document.getElementById('file-upload').addEventListener('change', function(e) {
-            if (e.target.files.length > 0) {
-                currentFile = e.target.files[0];
-                const fileInfo = document.getElementById('file-info');
-                const fileName = document.getElementById('file-name');
-
-                fileName.textContent = currentFile.name;
+            selectedFiles = Array.from(e.target.files);
+            const fileList = document.getElementById('file-list');
+            const fileInfo = document.getElementById('file-info');
+            
+            fileList.innerHTML = '';
+            if (selectedFiles.length > 0) {
+                selectedFiles.forEach(file => {
+                    const fileItem = document.createElement('div');
+                    fileItem.className = 'file-item';
+                    fileItem.innerHTML = `
+                        <div class="file-name">${file.name}</div>
+                        <div class="file-size">${formatFileSize(file.size)}</div>
+                    `;
+                    fileList.appendChild(fileItem);
+                });
                 fileInfo.style.display = 'block';
+            } else {
+                fileInfo.style.display = 'none';
             }
         });
 
-        async function decryptFile() {
+        async function decryptFiles() {
             const fileInput = document.getElementById('file-upload');
             const passwordInput = document.getElementById('password');
             const statusDiv = document.getElementById('status');
-            const downloadLink = document.getElementById('downloadLink');
+            const downloadSection = document.getElementById('download-section');
+            const downloadLinks = document.getElementById('download-links');
+            const downloadAllBtn = document.getElementById('downloadAll');
             const loader = document.getElementById('loader');
 
-            // Сброс интерфейса
+            // Reset UI
             statusDiv.textContent = '';
             statusDiv.className = 'status-message';
-            downloadLink.style.display = 'none';
+            downloadLinks.innerHTML = '';
+            downloadAllBtn.style.display = 'none';
             loader.style.display = 'none';
+            decryptedFiles = [];
 
             if (!fileInput.files.length) {
-                statusDiv.textContent = '❌ Выберите файл.';
+                statusDiv.textContent = '❌ Выберите файлы.';
                 statusDiv.className = 'status-message error';
+                statusDiv.style.display = 'block';
                 return;
             }
 
-            const file = fileInput.files[0];
             const password = passwordInput.value || 'default_password';
+            statusDiv.textContent = '🔄 Обработка файлов...';
+            statusDiv.className = 'status-message';
+            statusDiv.style.display = 'block';
+            loader.style.display = 'flex';
 
             try {
-                statusDiv.textContent = '🔄 Обработка...';
-                statusDiv.className = 'status-message';
-                statusDiv.style.display = 'block';
-                loader.style.display = 'flex';
-
-                // Чтение файла
-                const encryptedData = await file.arrayBuffer();
-
-                if (encryptedData.byteLength < 16) {
-                    statusDiv.textContent = '❌ Файл слишком маленький.';
-                    statusDiv.className = 'status-message error';
-                    return;
-                }
-
-                // Извлечение IV и зашифрованного содержимого
-                const iv = encryptedData.slice(0, 16);
-                const encryptedContent = encryptedData.slice(16);
-
-                if (encryptedContent.byteLength === 0) {
-                    statusDiv.textContent = '❌ Нет зашифрованного содержимого.';
-                    statusDiv.className = 'status-message error';
-                    return;
-                }
-
-                // Генерация ключа из пароля (SHA-256)
+                // Generate key once for all files
                 const encoder = new TextEncoder();
                 const passwordBuffer = encoder.encode(password);
                 const keyMaterial = await crypto.subtle.digest('SHA-256', passwordBuffer);
@@ -468,68 +477,114 @@
                     ['decrypt']
                 );
 
-                // Дешифрование с использованием AES-CTR
-                const decryptedData = await crypto.subtle.decrypt(
-                    {
-                        name: 'AES-CTR',
-                        counter: iv,
-                        length: 128
-                    },
-                    key,
-                    encryptedContent
-                );
+                for (const file of selectedFiles) {
+                    try {
+                        const encryptedData = await file.arrayBuffer();
 
-                // Валидация заголовка файла
-                const header = new Uint8Array(decryptedData.slice(0, 4));
-                const validHeaders = [
-                    { bytes: [0xFF, 0xD8], ext: 'jpg', type: 'JPEG' },
-                    { bytes: [0x89, 0x50, 0x4E, 0x47], ext: 'png', type: 'PNG' },
-                    { bytes: [0x42, 0x4D], ext: 'bmp', type: 'BMP' },
-                    { bytes: [0x52, 0x49, 0x46, 0x46], ext: 'webp', type: 'WEBP' },
-                    { bytes: [0x47, 0x49, 0x46, 0x38], ext: 'gif', type: 'GIF' }
-                ];
+                        if (encryptedData.byteLength < 16) {
+                            statusDiv.textContent += `\n❌ Файл ${file.name} слишком маленький.`;
+                            statusDiv.className = 'status-message error';
+                            continue;
+                        }
 
-                let fileExt = 'bin';
-                let fileType = 'Неизвестный';
+                        // Extract IV and encrypted content
+                        const iv = encryptedData.slice(0, 16);
+                        const encryptedContent = encryptedData.slice(16);
 
-                for (const { bytes, ext, type } of validHeaders) {
-                    if (header.slice(0, bytes.length).every((b, i) => b === bytes[i])) {
-                        fileExt = ext;
-                        fileType = type;
-                        statusDiv.textContent = `✅ Найден заголовок ${fileType}!`;
-                        statusDiv.className = 'status-message success';
-                        break;
+                        if (encryptedContent.byteLength === 0) {
+                            statusDiv.textContent += `\n❌ Нет зашифрованного содержимого в ${file.name}.`;
+                            statusDiv.className = 'status-message error';
+                            continue;
+                        }
+
+                        // Decrypt
+                        const decryptedData = await crypto.subtle.decrypt(
+                            {
+                                name: 'AES-CTR',
+                                counter: iv,
+                                length: 128
+                            },
+                            key,
+                            encryptedContent
+                        );
+
+                        // Validate file header
+                        const header = new Uint8Array(decryptedData.slice(0, 4));
+                        const validHeaders = [
+                            { bytes: [0xFF, 0xD8], ext: 'jpg', type: 'JPEG' },
+                            { bytes: [0x89, 0x50, 0x4E, 0x47], ext: 'png', type: 'PNG' },
+                            { bytes: [0x42, 0x4D], ext: 'bmp', type: 'BMP' },
+                            { bytes: [0x52, 0x49, 0x46, 0x46], ext: 'webp', type: 'WEBP' },
+                            { bytes: [0x47, 0x49, 0x46, 0x38], ext: 'gif', type: 'GIF' }
+                        ];
+
+                        let fileExt = 'bin';
+                        let fileType = 'Неизвестный';
+
+                        for (const { bytes, ext, type } of validHeaders) {
+                            if (header.slice(0, bytes.length).every((b, i) => b === bytes[i])) {
+                                fileExt = ext;
+                                fileType = type;
+                                statusDiv.textContent += `\n✅ ${file.name}: Найден заголовок ${fileType}!`;
+                                statusDiv.className = 'status-message success';
+                                break;
+                            }
+                        }
+
+                        if (fileType === 'Неизвестный') {
+                            statusDiv.textContent += `\n⚠️ ${file.name}: Неизвестный заголовок. Возможно, неверный пароль или поврежденный файл.`;
+                            statusDiv.className = 'status-message error';
+                        }
+
+                        // Create download link
+                        const blob = new Blob([decryptedData], { type: `image/${fileExt}` });
+                        const url = URL.createObjectURL(blob);
+                        const originalName = file.name.replace(/\.[^/.]+$/, "");
+                        const downloadLink = document.createElement('a');
+                        downloadLink.href = url;
+                        downloadLink.download = `${originalName}_decrypted.${fileExt}`;
+                        downloadLink.className = 'download-btn';
+                        downloadLink.textContent = `Скачать ${file.name} (${fileType})`;
+                        downloadLinks.appendChild(downloadLink);
+
+                        decryptedFiles.push({ url, name: `${originalName}_decrypted.${fileExt}` });
+
+                        if (fileType !== 'Неизвестный') {
+                            statusDiv.textContent += `\n💾 ${file.name}: Файл готов к скачиванию!`;
+                        } else {
+                            statusDiv.textContent += `\n💾 ${file.name}: Файл сохранен для диагностики.`;
+                        }
+
+                    } catch (e) {
+                        statusDiv.textContent += `\n❌ Ошибка при обработке ${file.name}: ${e.message}`;
+                        statusDiv.className = 'status-message error';
                     }
                 }
 
-                if (fileType === 'Неизвестный') {
-                    statusDiv.textContent = `⚠️ Неизвестный заголовок. Возможно, неверный пароль или поврежденный файл.`;
-                    statusDiv.className = 'status-message error';
-                }
-
-                // Создание ссылки для скачивания
-                const blob = new Blob([decryptedData], { type: `image/${fileExt}` });
-                const url = URL.createObjectURL(blob);
-
-                // Формируем имя файла: оригинальное имя без расширения + _decrypted.расширение
-                const originalName = file.name.replace(/\.[^/.]+$/, "");
-                downloadLink.href = url;
-                downloadLink.download = `${originalName}_decrypted.${fileExt}`;
-                downloadLink.textContent = `Скачать расшифрованный файл (${fileType})`;
-                downloadLink.style.display = 'inline-block';
-
-                if (fileType !== 'Неизвестный') {
-                    statusDiv.textContent += `\n💾 Файл готов к скачиванию!`;
+                if (decryptedFiles.length > 0) {
+                    downloadAllBtn.style.display = 'inline-block';
+                    statusDiv.textContent += `\n💾 Все файлы готовы к скачиванию!`;
                 } else {
-                    statusDiv.textContent += `\n💾 Файл сохранен для диагностики.`;
+                    statusDiv.textContent += `\n❌ Не удалось расшифровать ни один файл.`;
                 }
 
             } catch (e) {
-                statusDiv.textContent = `❌ Ошибка: ${e.message}`;
+                statusDiv.textContent = `❌ Общая ошибка: ${e.message}`;
                 statusDiv.className = 'status-message error';
             } finally {
                 loader.style.display = 'none';
             }
+        }
+
+        function downloadAllFiles() {
+            decryptedFiles.forEach(file => {
+                const link = document.createElement('a');
+                link.href = file.url;
+                link.download = file.name;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            });
         }
     </script>
 </body>
