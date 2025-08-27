@@ -379,6 +379,32 @@ async function generateDecryptionKey(password) {
 }
 
 /**
+ * Определяет тип файла по его заголовку
+ * @param {Uint8Array} header - первые байты файла
+ * @returns {Object} - объект с информацией о типе файла
+ */
+function detectFileType(header) {
+    // Список известных заголовков файлов
+    const validHeaders = [
+        { bytes: [0xFF, 0xD8], ext: 'jpg', type: 'JPEG' },
+        { bytes: [0x89, 0x50, 0x4E, 0x47], ext: 'png', type: 'PNG' },
+        { bytes: [0x42, 0x4D], ext: 'bmp', type: 'BMP' },
+        { bytes: [0x52, 0x49, 0x46, 0x46], ext: 'webp', type: 'WEBP' },
+        { bytes: [0x47, 0x49, 0x46, 0x38], ext: 'gif', type: 'GIF' }
+    ];
+
+    // Проверяем каждый известный заголовок
+    for (const { bytes, ext, type } of validHeaders) {
+        if (header.slice(0, bytes.length).every((b, i) => b === bytes[i])) {
+            return { ext, type, isValid: true };
+        }
+    }
+
+    // Если заголовок не распознан
+    return { ext: 'bin', type: 'Неизвестный', isValid: false };
+}
+
+/**
  * Обрабатывает один файл - расшифровывает и создает ссылку для скачивания
  * @param {File} file - файл для обработки
  * @param {CryptoKey} key - ключ расшифровки
@@ -415,15 +441,21 @@ async function processFile(file, key, downloadLinks) {
             encryptedContent
         );
 
-        // Определяем тип файла по заголовку
-        const fileInfo = detectFileType(new Uint8Array(decryptedData.slice(0, 4)));
+        // Определяем тип файла по заголовку (берем больше байт для точности)
+        const headerBytes = Math.min(16, decryptedData.byteLength); // Читаем до 16 байт заголовка
+        const fileInfo = detectFileType(new Uint8Array(decryptedData.slice(0, headerBytes)));
         
-        // Проверяем, является ли расшифрованный файл изображением
-        if (fileInfo.type === 'Неизвестный') {
-            return { success: false, error: 'Не изображение или неверный пароль' };
+        // КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: проверяем, является ли файл действительно валидным изображением
+        if (!fileInfo.isValid) {
+            return { success: false, error: 'Неверный пароль или поврежденный файл' };
+        }
+
+        // Дополнительная проверка: минимальный размер для изображений
+        if (decryptedData.byteLength < 100) { // Изображения обычно больше 100 байт
+            return { success: false, error: 'Файл слишком мал для изображения' };
         }
         
-        // Создаем ссылку для скачивания
+        // Создаем ссылку для скачивания только если файл валидный
         createDownloadLink(file, decryptedData, fileInfo, downloadLinks);
 
         return { 
@@ -437,34 +469,8 @@ async function processFile(file, key, downloadLinks) {
         if (e.name === 'OperationError') {
             return { success: false, error: 'Неверный пароль' };
         }
-        return { success: false, error: 'Поврежденный файл' };
+        return { success: false, error: 'Ошибка расшифровки: ' + e.message };
     }
-}
-
-/**
- * Определяет тип файла по его заголовку
- * @param {Uint8Array} header - первые байты файла
- * @returns {Object} - объект с информацией о типе файла
- */
-function detectFileType(header) {
-    // Список известных заголовков файлов
-    const validHeaders = [
-        { bytes: [0xFF, 0xD8], ext: 'jpg', type: 'JPEG' },
-        { bytes: [0x89, 0x50, 0x4E, 0x47], ext: 'png', type: 'PNG' },
-        { bytes: [0x42, 0x4D], ext: 'bmp', type: 'BMP' },
-        { bytes: [0x52, 0x49, 0x46, 0x46], ext: 'webp', type: 'WEBP' },
-        { bytes: [0x47, 0x49, 0x46, 0x38], ext: 'gif', type: 'GIF' }
-    ];
-
-    // Проверяем каждый известный заголовок
-    for (const { bytes, ext, type } of validHeaders) {
-        if (header.slice(0, bytes.length).every((b, i) => b === bytes[i])) {
-            return { ext, type };
-        }
-    }
-
-    // Если заголовок не распознан
-    return { ext: 'bin', type: 'Неизвестный' };
 }
 
 /**
@@ -510,6 +516,45 @@ function downloadAllFiles() {
             document.body.removeChild(link);
         }, index * 100); // Небольшая задержка между скачиваниями
     });
+}
+
+/**
+ * Дополнительная функция для более точной проверки изображений
+ * @param {ArrayBuffer} data - данные файла
+ * @param {string} expectedType - ожидаемый тип файла
+ * @returns {boolean} - является ли файл валидным изображением
+ */
+function validateImageFile(data, expectedType) {
+    const bytes = new Uint8Array(data);
+    
+    switch (expectedType) {
+        case 'JPEG':
+            // JPEG должен заканчиваться на FF D9
+            return bytes.length > 10 && 
+                   bytes[bytes.length - 2] === 0xFF && 
+                   bytes[bytes.length - 1] === 0xD9;
+        
+        case 'PNG':
+            // PNG должен иметь правильную структуру IHDR chunk
+            return bytes.length > 33 && 
+                   bytes[12] === 0x49 && bytes[13] === 0x48 && 
+                   bytes[14] === 0x44 && bytes[15] === 0x52; // "IHDR"
+        
+        case 'GIF':
+            // GIF должен содержать версию (87a или 89a)
+            return bytes.length > 10 && 
+                   (bytes[4] === 0x37 || bytes[4] === 0x39) && 
+                   bytes[5] === 0x61; // "7a" или "9a"
+        
+        case 'BMP':
+            // BMP имеет размер файла в заголовке, проверим его
+            if (bytes.length < 14) return false;
+            const fileSize = bytes[2] | (bytes[3] << 8) | (bytes[4] << 16) | (bytes[5] << 24);
+            return fileSize === bytes.length;
+            
+        default:
+            return true; // Для других типов пропускаем дополнительную проверку
+    }
 }
 
 // Инициализация при загрузке страницы
