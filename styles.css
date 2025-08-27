@@ -11,6 +11,7 @@
     --success: #4caf50;
     --error: #f44336;
     --warning: #ff9800;
+    --info: #2196f3;
     --text-primary: #ffffff;
     --text-secondary: rgba(255, 255, 255, 0.7);
     --shadow-glow: 0 0 20px rgba(114, 9, 183, 0.3);
@@ -38,7 +39,7 @@ body {
 }
 
 .container {
-    max-width: 800px;
+    max-width: 900px;
     margin: 0 auto;
     padding: 2rem;
 }
@@ -127,6 +128,7 @@ h1 span.emoji {
     box-shadow: var(--shadow-glow);
     border: 1px solid rgba(114, 9, 183, 0.2);
     backdrop-filter: blur(10px);
+    margin-bottom: 2rem;
 }
 
 /* Стили формы */
@@ -219,7 +221,7 @@ h1 span.emoji {
 /* Сетка файлов */
 .files-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     gap: 0.75rem;
     margin-top: 1rem;
 }
@@ -228,7 +230,7 @@ h1 span.emoji {
 .file-card {
     background: rgba(26, 26, 46, 0.6);
     border-radius: var(--border-radius-md);
-    padding: 0.75rem;
+    padding: 1rem;
     border: 1px solid rgba(114, 9, 183, 0.2);
     transition: var(--transition);
     position: relative;
@@ -245,12 +247,12 @@ h1 span.emoji {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.75rem;
 }
 
 .file-icon {
     font-size: 1.5rem;
-    margin-right: 0.5rem;
+    margin-right: 0.75rem;
     flex-shrink: 0;
 }
 
@@ -259,13 +261,14 @@ h1 span.emoji {
     color: var(--error);
     border: none;
     border-radius: 50%;
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.7rem;
+    font-size: 1rem;
+    font-weight: bold;
     transition: var(--transition);
     flex-shrink: 0;
 }
@@ -282,28 +285,87 @@ h1 span.emoji {
 
 .file-name {
     font-weight: 500;
-    margin-bottom: 0.2rem;
+    margin-bottom: 0.3rem;
     word-break: break-word;
-    font-size: 0.85rem;
-    line-height: 1.2;
+    font-size: 0.9rem;
+    line-height: 1.3;
 }
 
 .file-size {
-    font-size: 0.75rem;
+    font-size: 0.8rem;
     color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+/* Детали файла */
+.file-details {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 0.85rem;
+}
+
+.file-detail-item {
     margin-bottom: 0.4rem;
+    display: flex;
+    align-items: center;
+}
+
+.file-detail-label {
+    font-weight: 500;
+    margin-right: 0.5rem;
+    color: var(--text-secondary);
+    min-width: 60px;
+}
+
+.file-detail-value {
+    color: var(--text-primary);
+    word-break: break-word;
+    flex: 1;
+}
+
+.file-detail-value.link {
+    color: var(--neon-blue);
+    cursor: pointer;
+    text-decoration: underline;
+    font-size: 0.8rem;
+}
+
+.file-detail-value.link:hover {
+    color: var(--primary-light);
+}
+
+.encrypted-indicator {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--border-radius-sm);
+    margin-top: 0.3rem;
+}
+
+.encrypted-indicator.yes {
+    background: rgba(255, 152, 0, 0.2);
+    color: var(--warning);
+}
+
+.encrypted-indicator.no {
+    background: rgba(33, 150, 243, 0.2);
+    color: var(--info);
 }
 
 .file-status {
-    font-size: 0.75rem;
-    padding: 0.2rem 0.4rem;
+    font-size: 0.8rem;
+    padding: 0.3rem 0.5rem;
     border-radius: var(--border-radius-sm);
     display: inline-block;
+    font-weight: 500;
+    margin-top: 0.5rem;
 }
 
 .file-status.ready {
     background: rgba(33, 150, 243, 0.2);
-    color: #2196f3;
+    color: var(--info);
 }
 
 .file-status.processing {
@@ -324,11 +386,11 @@ h1 span.emoji {
 /* Прогресс-бар для файла */
 .file-progress {
     width: 100%;
-    height: 2px;
+    height: 3px;
     background: rgba(114, 9, 183, 0.2);
-    border-radius: 2px;
+    border-radius: 3px;
     overflow: hidden;
-    margin-top: 0.4rem;
+    margin-top: 0.5rem;
     display: none;
 }
 
@@ -341,6 +403,12 @@ h1 span.emoji {
     background: linear-gradient(90deg, var(--primary), var(--primary-light));
     width: 0%;
     transition: width 0.3s ease;
+    animation: progressPulse 1.5s infinite;
+}
+
+@keyframes progressPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
 }
 
 /* Счетчик файлов */
@@ -373,6 +441,7 @@ h1 span.emoji {
     cursor: pointer;
     transition: var(--transition);
     font-size: 0.9rem;
+    font-weight: 500;
 }
 
 .clear-all-btn:hover {
@@ -454,15 +523,16 @@ h1 span.emoji {
     margin: 1rem 0;
     text-align: center;
     display: none;
+    white-space: pre-line;
 }
 
-.success {
+.status-message.success {
     background: rgba(76, 175, 80, 0.2);
     color: var(--success);
     display: block;
 }
 
-.error {
+.status-message.error {
     background: rgba(244, 67, 54, 0.2);
     color: var(--error);
     display: block;
@@ -495,13 +565,118 @@ h1 span.emoji {
     box-shadow: 0 5px 15px rgba(114, 9, 183, 0.4);
 }
 
+/* Панель ссылок */
+.links-panel {
+    background: rgba(26, 26, 46, 0.7);
+    border-radius: var(--border-radius-lg);
+    padding: 2rem;
+    box-shadow: var(--shadow-glow);
+    border: 1px solid rgba(114, 9, 183, 0.2);
+    backdrop-filter: blur(10px);
+    margin-bottom: 2rem;
+}
+
+.links-panel h3 {
+    color: var(--neon-purple);
+    margin-bottom: 1.5rem;
+    font-size: 1.4rem;
+    display: flex;
+    align-items: center;
+}
+
+.links-container {
+    max-height: 300px;
+    overflow-y: auto;
+    margin-bottom: 1rem;
+}
+
+.link-item {
+    background: rgba(114, 9, 183, 0.1);
+    border-radius: var(--border-radius-md);
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    border: 1px solid rgba(114, 9, 183, 0.2);
+    transition: var(--transition);
+}
+
+.link-item:hover {
+    background: rgba(114, 9, 183, 0.2);
+    border-color: var(--primary-light);
+}
+
+.link-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.link-filename {
+    font-weight: 500;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.link-date {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.link-url {
+    color: var(--neon-blue);
+    font-size: 0.85rem;
+    word-break: break-all;
+    cursor: pointer;
+    transition: var(--transition);
+    text-decoration: none;
+}
+
+.link-url:hover {
+    color: var(--primary-light);
+    text-decoration: underline;
+}
+
+.copy-link-btn {
+    background: rgba(33, 150, 243, 0.2);
+    color: var(--info);
+    border: none;
+    padding: 0.3rem 0.6rem;
+    border-radius: var(--border-radius-sm);
+    cursor: pointer;
+    font-size: 0.75rem;
+    transition: var(--transition);
+    margin-left: 0.5rem;
+}
+
+.copy-link-btn:hover {
+    background: rgba(33, 150, 243, 0.4);
+}
+
+.copy-all-links-btn {
+    background: linear-gradient(135deg, var(--info), #1976d2);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: var(--border-radius-md);
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 600;
+    transition: var(--transition);
+    box-shadow: var(--shadow-sm);
+    width: 100%;
+}
+
+.copy-all-links-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(33, 150, 243, 0.4);
+}
+
 /* Информационная панель */
 .info-panel {
     background: rgba(26, 26, 46, 0.5);
     border-radius: var(--border-radius-lg);
     padding: 2rem;
     border-left: 4px solid var(--primary);
-    margin-top: 2rem;
 }
 
 .info-panel h3 {
@@ -582,25 +757,25 @@ h1 span.emoji {
     }
     
     .files-grid {
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        grid-template-columns: 1fr;
         gap: 0.5rem;
     }
     
     .file-card {
-        padding: 0.6rem;
+        padding: 0.75rem;
     }
     
     .file-name {
-        font-size: 0.8rem;
+        font-size: 0.85rem;
     }
     
     .file-size {
-        font-size: 0.7rem;
+        font-size: 0.75rem;
     }
     
     .file-status {
-        font-size: 0.7rem;
-        padding: 0.15rem 0.3rem;
+        font-size: 0.75rem;
+        padding: 0.2rem 0.4rem;
     }
     
     .file-icon {
@@ -630,8 +805,20 @@ h1 span.emoji {
         text-align: center;
     }
     
-    .decrypt-btn, .download-btn {
+    .decrypt-btn, .download-btn, .copy-all-links-btn {
         padding: 0.75rem 1.5rem;
         font-size: 0.9rem;
+    }
+    
+    .links-panel, .decryptor-card, .info-panel {
+        padding: 1.5rem;
+    }
+    
+    .file-details {
+        font-size: 0.8rem;
+    }
+    
+    .file-detail-label {
+        min-width: 50px;
     }
 }
