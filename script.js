@@ -16,33 +16,258 @@ function formatFileSize(bytes) {
 }
 
 /**
- * Обработчик события выбора файлов
- * Показывает информацию о выбранных файлах в интерфейсе
+ * Определяет иконку для файла по его типу
+ * @param {string} fileName - имя файла
+ * @returns {string} - эмодзи иконка
+ */
+function getFileIcon(fileName) {
+    const extension = fileName.split('.').pop()?.toLowerCase();
+    const iconMap = {
+        'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'bmp': '🖼️', 'webp': '🖼️',
+        'pdf': '📄', 'doc': '📄', 'docx': '📄', 'txt': '📄',
+        'zip': '📦', 'rar': '📦', '7z': '📦',
+        'mp4': '🎥', 'avi': '🎥', 'mov': '🎥',
+        'mp3': '🎵', 'wav': '🎵', 'flac': '🎵'
+    };
+    return iconMap[extension] || '📁';
+}
+
+/**
+ * Создает уникальный ID для файла
+ * @param {File} file - файл
+ * @returns {string} - уникальный ID
+ */
+function generateFileId(file) {
+    return `${file.name}_${file.size}_${file.lastModified}`;
+}
+
+/**
+ * Создает карточку файла в интерфейсе
+ * @param {File} file - файл для отображения
+ * @returns {HTMLElement} - элемент карточки файла
+ */
+function createFileCard(file) {
+    const fileId = generateFileId(file);
+    const fileCard = document.createElement('div');
+    fileCard.className = 'file-card';
+    fileCard.dataset.fileId = fileId;
+    
+    fileCard.innerHTML = `
+        <div class="file-card-header">
+            <div style="display: flex; align-items: flex-start;">
+                <div class="file-icon">${getFileIcon(file.name)}</div>
+                <div class="file-info">
+                    <div class="file-name" title="${file.name}">${file.name}</div>
+                    <div class="file-size">${formatFileSize(file.size)}</div>
+                </div>
+            </div>
+            <button class="file-remove" onclick="removeFile('${fileId}')" title="Удалить файл">×</button>
+        </div>
+        <div class="file-status pending">Ожидает обработки</div>
+        <div class="file-progress" id="progress_${fileId}">
+            <div class="file-progress-bar"></div>
+        </div>
+    `;
+    
+    return fileCard;
+}
+
+/**
+ * Обновляет отображение файлов в интерфейсе
+ */
+function updateFilesDisplay() {
+    const filesGrid = document.getElementById('files-grid');
+    const filesCounter = document.querySelector('.files-counter');
+    
+    // Очищаем сетку файлов
+    filesGrid.innerHTML = '';
+    
+    if (selectedFiles.length === 0) {
+        filesCounter?.classList.remove('show');
+        return;
+    }
+    
+    // Создаем карточки для каждого файла
+    selectedFiles.forEach(file => {
+        const fileCard = createFileCard(file);
+        filesGrid.appendChild(fileCard);
+    });
+    
+    // Показываем счетчик файлов
+    if (!filesCounter) {
+        createFilesCounter();
+    } else {
+        updateFilesCounter();
+        filesCounter.classList.add('show');
+    }
+}
+
+/**
+ * Создает счетчик файлов
+ */
+function createFilesCounter() {
+    const filesGrid = document.getElementById('files-grid');
+    const counter = document.createElement('div');
+    counter.className = 'files-counter show';
+    counter.innerHTML = `
+        <span class="files-counter-text">Выбрано файлов: ${selectedFiles.length}</span>
+        <button class="clear-all-btn" onclick="clearAllFiles()">Очистить все</button>
+    `;
+    filesGrid.parentNode.insertBefore(counter, filesGrid);
+}
+
+/**
+ * Обновляет счетчик файлов
+ */
+function updateFilesCounter() {
+    const counterText = document.querySelector('.files-counter-text');
+    if (counterText) {
+        counterText.textContent = `Выбрано файлов: ${selectedFiles.length}`;
+    }
+}
+
+/**
+ * Удаляет файл из списка
+ * @param {string} fileId - ID файла для удаления
+ */
+function removeFile(fileId) {
+    const fileCard = document.querySelector(`[data-file-id="${fileId}"]`);
+    if (fileCard) {
+        fileCard.classList.add('removing');
+        setTimeout(() => {
+            // Удаляем файл из массива
+            selectedFiles = selectedFiles.filter(file => generateFileId(file) !== fileId);
+            // Обновляем отображение
+            updateFilesDisplay();
+        }, 300);
+    }
+}
+
+/**
+ * Очищает все выбранные файлы
+ */
+function clearAllFiles() {
+    selectedFiles = [];
+    decryptedFiles = [];
+    updateFilesDisplay();
+    
+    // Очищаем поле ввода файлов
+    document.getElementById('file-upload').value = '';
+    
+    // Скрываем результаты
+    const statusDiv = document.getElementById('status');
+    const downloadSection = document.getElementById('download-section');
+    statusDiv.style.display = 'none';
+    document.getElementById('downloadAll').style.display = 'none';
+    document.getElementById('download-links').innerHTML = '';
+}
+
+/**
+ * Добавляет файлы в список (избегает дублирование)
+ * @param {FileList|File[]} files - файлы для добавления
+ */
+function addFiles(files) {
+    const newFiles = Array.from(files);
+    
+    newFiles.forEach(newFile => {
+        const newFileId = generateFileId(newFile);
+        // Проверяем, нет ли уже такого файла
+        const exists = selectedFiles.some(existingFile => 
+            generateFileId(existingFile) === newFileId
+        );
+        
+        if (!exists) {
+            selectedFiles.push(newFile);
+        }
+    });
+    
+    updateFilesDisplay();
+}
+
+/**
+ * Инициализация drag & drop функциональности
+ */
+function initializeDragAndDrop() {
+    const dropZone = document.getElementById('drop-zone');
+    
+    // Предотвращаем стандартное поведение браузера
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
+        document.body.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    // Подсветка при перетаскивании
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, highlight, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, unhighlight, false);
+    });
+    
+    // Обработка сброса файлов
+    dropZone.addEventListener('drop', handleDrop, false);
+    
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    function highlight(e) {
+        dropZone.classList.add('drag-over');
+    }
+    
+    function unhighlight(e) {
+        dropZone.classList.remove('drag-over');
+    }
+    
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        addFiles(files);
+    }
+}
+
+/**
+ * Обработчик события выбора файлов через кнопку
  */
 document.getElementById('file-upload').addEventListener('change', function(e) {
-    selectedFiles = Array.from(e.target.files);
-    const fileList = document.getElementById('file-list');
-    const fileInfo = document.getElementById('file-info');
-    
-    // Очищаем список файлов
-    fileList.innerHTML = '';
-    
-    if (selectedFiles.length > 0) {
-        // Показываем информацию о каждом файле
-        selectedFiles.forEach(file => {
-            const fileItem = document.createElement('div');
-            fileItem.className = 'file-item';
-            fileItem.innerHTML = `
-                <div class="file-name">${file.name}</div>
-                <div class="file-size">${formatFileSize(file.size)}</div>
-            `;
-            fileList.appendChild(fileItem);
-        });
-        fileInfo.style.display = 'block';
-    } else {
-        fileInfo.style.display = 'none';
-    }
+    addFiles(e.target.files);
 });
+
+/**
+ * Обновляет статус файла в карточке
+ * @param {string} fileId - ID файла
+ * @param {string} status - новый статус ('pending', 'processing', 'success', 'error')
+ * @param {string} message - сообщение статуса
+ */
+function updateFileStatus(fileId, status, message = '') {
+    const fileCard = document.querySelector(`[data-file-id="${fileId}"]`);
+    if (!fileCard) return;
+    
+    const statusElement = fileCard.querySelector('.file-status');
+    const progressElement = fileCard.querySelector('.file-progress');
+    
+    statusElement.className = `file-status ${status}`;
+    
+    const statusMessages = {
+        'pending': 'Ожидает обработки',
+        'processing': 'Обрабатывается...',
+        'success': message || 'Успешно расшифрован',
+        'error': message || 'Ошибка при расшифровке'
+    };
+    
+    statusElement.textContent = statusMessages[status] || message;
+    
+    if (status === 'processing') {
+        progressElement.classList.add('show');
+        // Анимация прогресса
+        const progressBar = progressElement.querySelector('.file-progress-bar');
+        progressBar.style.width = '100%';
+    } else {
+        progressElement.classList.remove('show');
+    }
+}
 
 /**
  * Основная функция расшифровки файлов
@@ -50,7 +275,6 @@ document.getElementById('file-upload').addEventListener('change', function(e) {
  */
 async function decryptFiles() {
     // Получаем элементы интерфейса
-    const fileInput = document.getElementById('file-upload');
     const passwordInput = document.getElementById('password');
     const statusDiv = document.getElementById('status');
     const downloadSection = document.getElementById('download-section');
@@ -67,8 +291,8 @@ async function decryptFiles() {
     decryptedFiles = [];
 
     // Проверяем, выбраны ли файлы
-    if (!fileInput.files.length) {
-        statusDiv.textContent = '❌ Выберите файлы.';
+    if (selectedFiles.length === 0) {
+        statusDiv.textContent = '❌ Выберите файлы для расшифровки.';
         statusDiv.className = 'status-message error';
         statusDiv.style.display = 'block';
         return;
@@ -76,7 +300,7 @@ async function decryptFiles() {
 
     // Получаем пароль (или используем по умолчанию)
     const password = passwordInput.value || 'default_password';
-    statusDiv.textContent = '🔄 Обработка файлов...';
+    statusDiv.textContent = `🔄 Обрабатываем ${selectedFiles.length} файлов...`;
     statusDiv.className = 'status-message';
     statusDiv.style.display = 'block';
     loader.style.display = 'flex';
@@ -85,22 +309,51 @@ async function decryptFiles() {
         // Создаем ключ шифрования один раз для всех файлов
         const key = await generateDecryptionKey(password);
 
+        let successCount = 0;
+        let errorCount = 0;
+
         // Обрабатываем каждый файл
         for (const file of selectedFiles) {
-            await processFile(file, key, statusDiv, downloadLinks);
+            const fileId = generateFileId(file);
+            updateFileStatus(fileId, 'processing');
+            
+            try {
+                const result = await processFile(file, key, downloadLinks);
+                if (result.success) {
+                    updateFileStatus(fileId, 'success', `${result.fileType} файл`);
+                    successCount++;
+                } else {
+                    updateFileStatus(fileId, 'error', result.error);
+                    errorCount++;
+                }
+            } catch (error) {
+                updateFileStatus(fileId, 'error', error.message);
+                errorCount++;
+            }
         }
 
-        // Показываем кнопку "Скачать все", если есть расшифрованные файлы
-        if (decryptedFiles.length > 0) {
+        // Обновляем общий статус
+        if (successCount > 0) {
+            statusDiv.textContent = `✅ Успешно обработано: ${successCount} файлов`;
+            if (errorCount > 0) {
+                statusDiv.textContent += `\n⚠️ Ошибок: ${errorCount} файлов`;
+            }
+            statusDiv.className = 'status-message success';
             downloadAllBtn.style.display = 'inline-block';
-            statusDiv.textContent += `\n💾 Все файлы готовы к скачиванию!`;
         } else {
-            statusDiv.textContent += `\n❌ Не удалось расшифровать ни один файл.`;
+            statusDiv.textContent = `❌ Не удалось расшифровать ни одного файла. Проверьте пароль.`;
+            statusDiv.className = 'status-message error';
         }
 
     } catch (e) {
         statusDiv.textContent = `❌ Общая ошибка: ${e.message}`;
         statusDiv.className = 'status-message error';
+        
+        // Помечаем все файлы как ошибочные
+        selectedFiles.forEach(file => {
+            const fileId = generateFileId(file);
+            updateFileStatus(fileId, 'error', 'Ошибка ключа');
+        });
     } finally {
         loader.style.display = 'none';
     }
@@ -129,19 +382,17 @@ async function generateDecryptionKey(password) {
  * Обрабатывает один файл - расшифровывает и создает ссылку для скачивания
  * @param {File} file - файл для обработки
  * @param {CryptoKey} key - ключ расшифровки
- * @param {HTMLElement} statusDiv - элемент для вывода статуса
  * @param {HTMLElement} downloadLinks - контейнер для ссылок скачивания
+ * @returns {Promise<Object>} - результат обработки
  */
-async function processFile(file, key, statusDiv, downloadLinks) {
+async function processFile(file, key, downloadLinks) {
     try {
         // Читаем зашифрованные данные
         const encryptedData = await file.arrayBuffer();
 
         // Проверяем минимальный размер файла (должен содержать IV)
         if (encryptedData.byteLength < 16) {
-            statusDiv.textContent += `\n❌ Файл ${file.name} слишком маленький.`;
-            statusDiv.className = 'status-message error';
-            return;
+            return { success: false, error: 'Файл слишком маленький' };
         }
 
         // Извлекаем вектор инициализации (первые 16 байт)
@@ -150,9 +401,7 @@ async function processFile(file, key, statusDiv, downloadLinks) {
 
         // Проверяем, есть ли зашифрованное содержимое
         if (encryptedContent.byteLength === 0) {
-            statusDiv.textContent += `\n❌ Нет зашифрованного содержимого в ${file.name}.`;
-            statusDiv.className = 'status-message error';
-            return;
+            return { success: false, error: 'Нет зашифрованного содержимого' };
         }
 
         // Расшифровываем файл
@@ -169,23 +418,17 @@ async function processFile(file, key, statusDiv, downloadLinks) {
         // Определяем тип файла по заголовку
         const fileInfo = detectFileType(new Uint8Array(decryptedData.slice(0, 4)));
         
-        // Обновляем статус
-        if (fileInfo.type !== 'Неизвестный') {
-            statusDiv.textContent += `\n✅ ${file.name}: Найден заголовок ${fileInfo.type}!`;
-            statusDiv.className = 'status-message success';
-        } else {
-            statusDiv.textContent += `\n⚠️ ${file.name}: Неизвестный заголовок. Возможно, неверный пароль или поврежденный файл.`;
-            statusDiv.className = 'status-message error';
-        }
-
         // Создаем ссылку для скачивания
         createDownloadLink(file, decryptedData, fileInfo, downloadLinks);
 
-        statusDiv.textContent += `\n💾 ${file.name}: Файл готов к скачиванию!`;
+        return { 
+            success: true, 
+            fileType: fileInfo.type,
+            extension: fileInfo.ext
+        };
 
     } catch (e) {
-        statusDiv.textContent += `\n❌ Ошибка при обработке ${file.name}: ${e.message}`;
-        statusDiv.className = 'status-message error';
+        return { success: false, error: e.message };
     }
 }
 
@@ -236,7 +479,7 @@ function createDownloadLink(originalFile, decryptedData, fileInfo, downloadLinks
     downloadLink.href = url;
     downloadLink.download = fileName;
     downloadLink.className = 'download-btn';
-    downloadLink.textContent = `Скачать ${originalFile.name} (${fileInfo.type})`;
+    downloadLink.textContent = `📥 ${originalFile.name} (${fileInfo.type})`;
     downloadLinks.appendChild(downloadLink);
 
     // Сохраняем информацию о файле для массового скачивания
@@ -248,12 +491,25 @@ function createDownloadLink(originalFile, decryptedData, fileInfo, downloadLinks
  * Автоматически запускает скачивание каждого файла
  */
 function downloadAllFiles() {
-    decryptedFiles.forEach(file => {
-        const link = document.createElement('a');
-        link.href = file.url;
-        link.download = file.name;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+    decryptedFiles.forEach((file, index) => {
+        setTimeout(() => {
+            const link = document.createElement('a');
+            link.href = file.url;
+            link.download = file.name;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }, index * 100); // Небольшая задержка между скачиваниями
     });
 }
+
+// Инициализация при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    initializeDragAndDrop();
+    
+    // Добавляем обработчик клика на зону перетаскивания
+    const dropZone = document.getElementById('drop-zone');
+    dropZone.addEventListener('click', function() {
+        document.getElementById('file-upload').click();
+    });
+});
