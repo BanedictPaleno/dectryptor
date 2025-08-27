@@ -1,6 +1,7 @@
 // Глобальные переменные для хранения файлов
 let selectedFiles = [];
 let decryptedFiles = [];
+let extractedLinks = [];
 
 /**
  * Форматирует размер файла в читаемый вид
@@ -42,6 +43,203 @@ function generateFileId(file) {
 }
 
 /**
+ * Расшифровывает имя файла для извлечения даты и ссылки
+ * @param {string} filename - имя файла
+ * @param {string} password - пароль для расшифровки
+ * @returns {Object} - объект с датой и ссылкой
+ */
+function decryptFilename(filename, password) {
+    try {
+        // Убираем расширение
+        const baseName = filename.replace(/\.[^/.]+$/, "");
+        
+        try {
+            // Декодируем из base64
+            const encryptedData = atob(baseName);
+            
+            // XOR расшифровка
+            const passwordBytes = new TextEncoder().encode(password || 'default_password');
+            const decryptedBytes = new Uint8Array(encryptedData.length);
+            
+            for (let i = 0; i < encryptedData.length; i++) {
+                decryptedBytes[i] = encryptedData.charCodeAt(i) ^ passwordBytes[i % passwordBytes.length];
+            }
+            
+            const decryptedString = new TextDecoder().decode(decryptedBytes);
+            
+            // Разделяем по разделителю |
+            if (decryptedString.includes('|')) {
+                const [dateTime, link] = decryptedString.split('|', 2);
+                return {
+                    dateTime: dateTime,
+                    link: link !== 'null' ? link : null,
+                    success: true
+                };
+            }
+        } catch (decryptError) {
+            console.log('Ошибка расшифровки base64, проверяем формат с датой:', decryptError.message);
+        }
+
+        // Если расшифровка не удалась, проверяем формат YYYYMMDD_HHMMSS_link
+        if (baseName.length >= 15 && baseName[8] === '_' && baseName[15] === '_') {
+            const datePart = baseName.substring(0, 8);
+            const timePart = baseName.substring(9, 15);
+            
+            if (/^\d{8}$/.test(datePart) && /^\d{6}$/.test(timePart)) {
+                const linkPart = baseName.substring(16);
+                
+                if (linkPart) {
+                    // Восстанавливаем ссылку
+                    let restoredLink = linkPart.replace(/_/g, '/');
+                    
+                    if (!restoredLink.startsWith('http://') && !restoredLink.startsWith('https://')) {
+                        restoredLink = 'https://' + restoredLink;
+                    }
+                    
+                    return {
+                        dateTime: `${datePart}_${timePart}`,
+                        link: restoredLink,
+                        success: true
+                    };
+                } else {
+                    return {
+                        dateTime: `${datePart}_${timePart}`,
+                        link: null,
+                        success: true
+                    };
+                }
+            }
+        }
+        
+        return { dateTime: null, link: null, success: false };
+        
+    } catch (error) {
+        console.log('Общая ошибка расшифровки имени файла:', error);
+        return { dateTime: null, link: null, success: false };
+    }
+}
+
+/**
+ * Проверяет наличие маркера шифрования ENC_ в файле
+ * @param {ArrayBuffer} fileData - данные файла
+ * @returns {boolean} - true если файл зашифрован
+ */
+function checkEncryptionMarker(fileData) {
+    const header = new Uint8Array(fileData.slice(0, 4));
+    const marker = [0x45, 0x4E, 0x43, 0x5F]; // "ENC_"
+    return header.every((byte, index) => byte === marker[index]);
+}
+
+/**
+ * Создает ключ шифрования из пароля
+ * @param {string} password - пароль
+ * @returns {Promise<ArrayBuffer>} - ключ SHA-256
+ */
+async function generateKey(password) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    return await crypto.subtle.digest('SHA-256', data);
+}
+
+/**
+ * Расшифровывает файл используя AES-CTR
+ * @param {ArrayBuffer} encryptedData - зашифрованные данные
+ * @param {ArrayBuffer} key - ключ шифрования
+ * @returns {Promise<ArrayBuffer>} - расшифрованные данные
+ */
+async function decryptFileData(encryptedData, key) {
+    if (encryptedData.byteLength < 20) {
+        throw new Error('Файл слишком мал');
+    }
+
+    // Проверяем маркер ENC_
+    if (!checkEncryptionMarker(encryptedData)) {
+        throw new Error('Неверный маркер шифрования');
+    }
+
+    // Извлекаем IV (16 байт после маркера)
+    const iv = encryptedData.slice(4, 20);
+    const encryptedContent = encryptedData.slice(20);
+
+    if (encryptedContent.byteLength === 0) {
+        throw new Error('Нет зашифрованного содержимого');
+    }
+
+    // Импортируем ключ
+    const cryptoKey = await crypto.subtle.importKey(
+        'raw',
+        key,
+        { name: 'AES-CTR' },
+        false,
+        ['decrypt']
+    );
+
+    // Создаем IV для AES-CTR
+    const ivArray = new Uint8Array(iv);
+    const ivPrefix = ivArray.slice(0, 8);
+    const ivCounterBytes = ivArray.slice(8, 16);
+    
+    // Читаем counter как big-endian 64-bit число
+    let counterValue = 0;
+    for (let i = 0; i < 8; i++) {
+        counterValue = (counterValue * 256) + ivCounterBytes[i];
+    }
+
+    // Создаем 128-битный IV для AES-CTR
+    const fullIV = new Uint8Array(16);
+    fullIV.set(ivPrefix, 0);
+    
+    // Записываем counter как big-endian 64-bit число в младшие 8 байт
+    for (let i = 7; i >= 0; i--) {
+        fullIV[8 + i] = counterValue & 0xFF;
+        counterValue = Math.floor(counterValue / 256);
+    }
+
+    // Расшифровываем
+    const decrypted = await crypto.subtle.decrypt(
+        {
+            name: 'AES-CTR',
+            counter: fullIV,
+            length: 128
+        },
+        cryptoKey,
+        encryptedContent
+    );
+
+    return decrypted;
+}
+
+/**
+ * Определяет тип файла по заголовку
+ * @param {ArrayBuffer} data - данные файла
+ * @returns {Object} - информация о типе файла
+ */
+function detectFileType(data) {
+    const header = new Uint8Array(data.slice(0, 16));
+    
+    const fileTypes = [
+        { signature: [0xFF, 0xD8], ext: 'jpg', mime: 'image/jpeg', type: 'JPEG' },
+        { signature: [0x89, 0x50, 0x4E, 0x47], ext: 'png', mime: 'image/png', type: 'PNG' },
+        { signature: [0x42, 0x4D], ext: 'bmp', mime: 'image/bmp', type: 'BMP' },
+        { signature: [0x52, 0x49, 0x46, 0x46], ext: 'webp', mime: 'image/webp', type: 'WEBP' },
+        { signature: [0x47, 0x49, 0x46, 0x38], ext: 'gif', mime: 'image/gif', type: 'GIF' }
+    ];
+
+    for (const fileType of fileTypes) {
+        if (header.slice(0, fileType.signature.length).every((byte, i) => byte === fileType.signature[i])) {
+            return {
+                ext: fileType.ext,
+                mime: fileType.mime,
+                type: fileType.type,
+                isValid: true
+            };
+        }
+    }
+
+    return { ext: 'bin', mime: 'application/octet-stream', type: 'Unknown', isValid: false };
+}
+
+/**
  * Создает карточку файла в интерфейсе
  * @param {File} file - файл для отображения
  * @returns {HTMLElement} - элемент карточки файла
@@ -51,6 +249,22 @@ function createFileCard(file) {
     const fileCard = document.createElement('div');
     fileCard.className = 'file-card';
     fileCard.dataset.fileId = fileId;
+    
+    // Анализируем имя файла
+    const password = document.getElementById('password').value || 'default_password';
+    const filenameInfo = decryptFilename(file.name, password);
+    
+    // Проверяем на маркер шифрования (читаем первые 4 байта)
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const isEncrypted = checkEncryptionMarker(e.target.result);
+        const encryptedIndicator = fileCard.querySelector('.encrypted-indicator');
+        if (encryptedIndicator) {
+            encryptedIndicator.textContent = isEncrypted ? '🔒 Зашифрован' : '📂 Не зашифрован';
+            encryptedIndicator.className = `encrypted-indicator ${isEncrypted ? 'yes' : 'no'}`;
+        }
+    };
+    reader.readAsArrayBuffer(file.slice(0, 4));
     
     fileCard.innerHTML = `
         <div class="file-card-header">
@@ -63,6 +277,23 @@ function createFileCard(file) {
             </div>
             <button class="file-remove" onclick="removeFile('${fileId}')" title="Удалить файл">×</button>
         </div>
+        
+        <div class="file-details">
+            ${filenameInfo.dateTime ? `
+                <div class="file-detail-item">
+                    <span class="file-detail-label">Дата:</span>
+                    <span class="file-detail-value">${filenameInfo.dateTime}</span>
+                </div>
+            ` : ''}
+            ${filenameInfo.link ? `
+                <div class="file-detail-item">
+                    <span class="file-detail-label">Ссылка:</span>
+                    <span class="file-detail-value link" onclick="window.open('${filenameInfo.link}', '_blank')" title="Открыть ссылку">${filenameInfo.link}</span>
+                </div>
+            ` : ''}
+            <div class="encrypted-indicator">Проверка...</div>
+        </div>
+        
         <div class="file-status ready">Готов к обработке</div>
         <div class="file-progress" id="progress_${fileId}">
             <div class="file-progress-bar"></div>
@@ -149,7 +380,9 @@ function removeFile(fileId) {
 function clearAllFiles() {
     selectedFiles = [];
     decryptedFiles = [];
+    extractedLinks = [];
     updateFilesDisplay();
+    updateLinksPanel();
     
     // Очищаем поле ввода файлов
     document.getElementById('file-upload').value = '';
@@ -253,7 +486,7 @@ function updateFileStatus(fileId, status, message = '') {
     const statusMessages = {
         'ready': 'Готов к обработке',
         'processing': 'Обрабатывается...',
-        'success': message || 'Расшифрован',
+        'success': message || 'Успешно обработан',
         'error': message || 'Ошибка'
     };
     
@@ -261,7 +494,6 @@ function updateFileStatus(fileId, status, message = '') {
     
     if (status === 'processing') {
         progressElement.classList.add('show');
-        // Анимация прогресса
         const progressBar = progressElement.querySelector('.file-progress-bar');
         progressBar.style.width = '100%';
     } else {
@@ -270,8 +502,190 @@ function updateFileStatus(fileId, status, message = '') {
 }
 
 /**
+ * Обновляет панель ссылок
+ */
+function updateLinksPanel() {
+    const linksPanel = document.getElementById('links-panel');
+    const linksContainer = document.getElementById('links-container');
+    
+    if (extractedLinks.length === 0) {
+        linksPanel.style.display = 'none';
+        return;
+    }
+    
+    linksContainer.innerHTML = '';
+    extractedLinks.forEach((linkInfo, index) => {
+        const linkItem = document.createElement('div');
+        linkItem.className = 'link-item';
+        linkItem.innerHTML = `
+            <div class="link-header">
+                <div class="link-filename">${linkInfo.filename}</div>
+                <div class="link-date">${linkInfo.dateTime || 'Дата не найдена'}</div>
+            </div>
+            <div style="display: flex; align-items: center;">
+                <a href="${linkInfo.link}" target="_blank" class="link-url" title="Открыть ссылку">${linkInfo.link}</a>
+                <button class="copy-link-btn" onclick="copyLink('${linkInfo.link}')" title="Скопировать ссылку">📋</button>
+            </div>
+        `;
+        linksContainer.appendChild(linkItem);
+    });
+    
+    linksPanel.style.display = 'block';
+}
+
+/**
+ * Копирует отдельную ссылку в буфер обмена
+ * @param {string} link - ссылка для копирования
+ */
+function copyLink(link) {
+    navigator.clipboard.writeText(link).then(() => {
+        // Показываем временное уведомление
+        const notification = document.createElement('div');
+        notification.textContent = 'Ссылка скопирована!';
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(76, 175, 80, 0.9);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            z-index: 10000;
+            font-weight: 500;
+        `;
+        document.body.appendChild(notification);
+        setTimeout(() => {
+            document.body.removeChild(notification);
+        }, 2000);
+    }).catch(err => {
+        console.error('Ошибка копирования:', err);
+    });
+}
+
+/**
+ * Копирует все ссылки в буфер обмена
+ */
+function copyAllLinks() {
+    if (extractedLinks.length === 0) return;
+    
+    const allLinks = extractedLinks.map(linkInfo => 
+        `${linkInfo.filename} (${linkInfo.dateTime || 'Без даты'}): ${linkInfo.link}`
+    ).join('\n');
+    
+    navigator.clipboard.writeText(allLinks).then(() => {
+        // Показываем уведомление
+        const notification = document.createElement('div');
+        notification.textContent = `Скопировано ${extractedLinks.length} ссылок!`;
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(33, 150, 243, 0.9);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            z-index: 10000;
+            font-weight: 500;
+        `;
+        document.body.appendChild(notification);
+        setTimeout(() => {
+            document.body.removeChild(notification);
+        }, 3000);
+    }).catch(err => {
+        console.error('Ошибка копирования:', err);
+    });
+}
+
+/**
+ * Обрабатывает один файл
+ * @param {File} file - файл для обработки
+ * @param {ArrayBuffer} key - ключ шифрования
+ * @param {HTMLElement} downloadLinks - контейнер для ссылок скачивания
+ * @returns {Promise<Object>} - результат обработки
+ */
+async function processFile(file, key, downloadLinks) {
+    try {
+        const password = document.getElementById('password').value || 'default_password';
+        
+        // Анализируем имя файла
+        const filenameInfo = decryptFilename(file.name, password);
+        
+        // Если найдена ссылка, добавляем её в список
+        if (filenameInfo.link) {
+            extractedLinks.push({
+                filename: file.name,
+                dateTime: filenameInfo.dateTime,
+                link: filenameInfo.link
+            });
+        }
+        
+        // Читаем файл
+        const fileData = await file.arrayBuffer();
+        
+        let decryptedData;
+        let fileType;
+        let isEncrypted = false;
+        
+        // Проверяем, зашифрован ли файл
+        if (checkEncryptionMarker(fileData)) {
+            isEncrypted = true;
+            // Расшифровываем файл
+            decryptedData = await decryptFileData(fileData, key);
+            fileType = detectFileType(decryptedData);
+            
+            if (!fileType.isValid) {
+                throw new Error('Неверный пароль или поврежденный файл');
+            }
+        } else {
+            // Файл не зашифрован, работаем с ним как есть
+            decryptedData = fileData;
+            fileType = detectFileType(decryptedData);
+        }
+        
+        // Создаем имя выходного файла
+        let outputFileName;
+        if (filenameInfo.dateTime) {
+            // Используем расшифрованную дату как имя
+            outputFileName = `${filenameInfo.dateTime.replace(/[:/\\*?"<>|]/g, '_')}.${fileType.ext}`;
+        } else {
+            // Используем оригинальное имя с правильным расширением
+            const baseName = file.name.replace(/\.[^/.]+$/, '');
+            outputFileName = `${baseName}_decrypted.${fileType.ext}`;
+        }
+        
+        // Создаем ссылку для скачивания
+        const blob = new Blob([decryptedData], { type: fileType.mime });
+        const url = URL.createObjectURL(blob);
+        
+        const downloadLink = document.createElement('a');
+        downloadLink.href = url;
+        downloadLink.download = outputFileName;
+        downloadLink.className = 'download-btn';
+        downloadLink.textContent = `📥 ${file.name} → ${outputFileName}`;
+        downloadLinks.appendChild(downloadLink);
+        
+        // Сохраняем информацию о файле для массового скачивания
+        decryptedFiles.push({ url, name: outputFileName });
+        
+        return {
+            success: true,
+            fileType: fileType.type,
+            isEncrypted: isEncrypted,
+            outputFileName: outputFileName
+        };
+        
+    } catch (error) {
+        console.error('Ошибка обработки файла:', error);
+        return {
+            success: false,
+            error: error.message,
+            isEncrypted: false
+        };
+    }
+}
+
+/**
  * Основная функция расшифровки файлов
- * Обрабатывает все выбранные файлы и расшифровывает их
  */
 async function decryptFiles() {
     // Получаем элементы интерфейса
@@ -289,6 +703,7 @@ async function decryptFiles() {
     downloadAllBtn.style.display = 'none';
     loader.style.display = 'none';
     decryptedFiles = [];
+    extractedLinks = [];
 
     // Проверяем, выбраны ли файлы
     if (selectedFiles.length === 0) {
@@ -298,7 +713,7 @@ async function decryptFiles() {
         return;
     }
 
-    // Получаем пароль (или используем по умолчанию)
+    // Получаем пароль
     const password = passwordInput.value || 'default_password';
     statusDiv.textContent = `🔄 Обрабатываем ${selectedFiles.length} файлов...`;
     statusDiv.className = 'status-message';
@@ -306,11 +721,13 @@ async function decryptFiles() {
     loader.style.display = 'flex';
 
     try {
-        // Создаем ключ шифрования один раз для всех файлов
-        const key = await generateDecryptionKey(password);
+        // Создаем ключ шифрования
+        const key = await generateKey(password);
 
         let successCount = 0;
         let errorCount = 0;
+        let encryptedCount = 0;
+        let unencryptedCount = 0;
 
         // Обрабатываем каждый файл
         for (const file of selectedFiles) {
@@ -320,8 +737,13 @@ async function decryptFiles() {
             try {
                 const result = await processFile(file, key, downloadLinks);
                 if (result.success) {
-                    updateFileStatus(fileId, 'success', `${result.fileType} файл`);
+                    updateFileStatus(fileId, 'success', `${result.fileType} файл: ${result.outputFileName}`);
                     successCount++;
+                    if (result.isEncrypted) {
+                        encryptedCount++;
+                    } else {
+                        unencryptedCount++;
+                    }
                 } else {
                     updateFileStatus(fileId, 'error', result.error);
                     errorCount++;
@@ -332,16 +754,29 @@ async function decryptFiles() {
             }
         }
 
+        // Обновляем панель ссылок
+        updateLinksPanel();
+
         // Обновляем общий статус
         if (successCount > 0) {
-            statusDiv.textContent = `✅ Успешно обработано: ${successCount} файлов`;
-            if (errorCount > 0) {
-                statusDiv.textContent += `\n⚠️ Ошибок: ${errorCount} файлов`;
+            let statusText = `✅ Успешно обработано: ${successCount} файлов`;
+            if (encryptedCount > 0) {
+                statusText += `\n🔓 Расшифровано: ${encryptedCount} файлов`;
             }
+            if (unencryptedCount > 0) {
+                statusText += `\n📂 Обычных файлов: ${unencryptedCount}`;
+            }
+            if (extractedLinks.length > 0) {
+                statusText += `\n🔗 Извлечено ссылок: ${extractedLinks.length}`;
+            }
+            if (errorCount > 0) {
+                statusText += `\n⚠️ Ошибок: ${errorCount} файлов`;
+            }
+            statusDiv.textContent = statusText;
             statusDiv.className = 'status-message success';
             downloadAllBtn.style.display = 'inline-block';
         } else {
-            statusDiv.textContent = `❌ Не удалось расшифровать ни одного файла. Проверьте пароль.`;
+            statusDiv.textContent = `❌ Не удалось обработать ни одного файла. Проверьте пароль и файлы.`;
             statusDiv.className = 'status-message error';
         }
 
@@ -360,148 +795,6 @@ async function decryptFiles() {
 }
 
 /**
- * Создает ключ расшифровки из пароля
- * @param {string} password - пароль для расшифровки
- * @returns {Promise<CryptoKey>} - ключ для расшифровки
- */
-async function generateDecryptionKey(password) {
-    const encoder = new TextEncoder();
-    const passwordBuffer = encoder.encode(password);
-    const keyMaterial = await crypto.subtle.digest('SHA-256', passwordBuffer);
-    
-    return await crypto.subtle.importKey(
-        'raw',
-        keyMaterial,
-        { name: 'AES-CTR' },
-        false,
-        ['decrypt']
-    );
-}
-
-/**
- * Определяет тип файла по его заголовку
- * @param {Uint8Array} header - первые байты файла
- * @returns {Object} - объект с информацией о типе файла
- */
-function detectFileType(header) {
-    // Список известных заголовков файлов
-    const validHeaders = [
-        { bytes: [0xFF, 0xD8], ext: 'jpg', type: 'JPEG' },
-        { bytes: [0x89, 0x50, 0x4E, 0x47], ext: 'png', type: 'PNG' },
-        { bytes: [0x42, 0x4D], ext: 'bmp', type: 'BMP' },
-        { bytes: [0x52, 0x49, 0x46, 0x46], ext: 'webp', type: 'WEBP' },
-        { bytes: [0x47, 0x49, 0x46, 0x38], ext: 'gif', type: 'GIF' }
-    ];
-
-    // Проверяем каждый известный заголовок
-    for (const { bytes, ext, type } of validHeaders) {
-        if (header.slice(0, bytes.length).every((b, i) => b === bytes[i])) {
-            return { ext, type, isValid: true };
-        }
-    }
-
-    // Если заголовок не распознан
-    return { ext: 'bin', type: 'Неизвестный', isValid: false };
-}
-
-/**
- * Обрабатывает один файл - расшифровывает и создает ссылку для скачивания
- * @param {File} file - файл для обработки
- * @param {CryptoKey} key - ключ расшифровки
- * @param {HTMLElement} downloadLinks - контейнер для ссылок скачивания
- * @returns {Promise<Object>} - результат обработки
- */
-async function processFile(file, key, downloadLinks) {
-    try {
-        // Читаем зашифрованные данные
-        const encryptedData = await file.arrayBuffer();
-
-        // Проверяем минимальный размер файла (должен содержать IV)
-        if (encryptedData.byteLength < 16) {
-            return { success: false, error: 'Файл слишком мал' };
-        }
-
-        // Извлекаем вектор инициализации (первые 16 байт)
-        const iv = encryptedData.slice(0, 16);
-        const encryptedContent = encryptedData.slice(16);
-
-        // Проверяем, есть ли зашифрованное содержимое
-        if (encryptedContent.byteLength === 0) {
-            return { success: false, error: 'Пустой файл' };
-        }
-
-        // Расшифровываем файл
-        const decryptedData = await crypto.subtle.decrypt(
-            {
-                name: 'AES-CTR',
-                counter: iv,
-                length: 128
-            },
-            key,
-            encryptedContent
-        );
-
-        // Определяем тип файла по заголовку (берем больше байт для точности)
-        const headerBytes = Math.min(16, decryptedData.byteLength); // Читаем до 16 байт заголовка
-        const fileInfo = detectFileType(new Uint8Array(decryptedData.slice(0, headerBytes)));
-        
-        // КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: проверяем, является ли файл действительно валидным изображением
-        if (!fileInfo.isValid) {
-            return { success: false, error: 'Неверный пароль или поврежденный файл' };
-        }
-
-        // Дополнительная проверка: минимальный размер для изображений
-        if (decryptedData.byteLength < 100) { // Изображения обычно больше 100 байт
-            return { success: false, error: 'Файл слишком мал для изображения' };
-        }
-        
-        // Создаем ссылку для скачивания только если файл валидный
-        createDownloadLink(file, decryptedData, fileInfo, downloadLinks);
-
-        return { 
-            success: true, 
-            fileType: fileInfo.type,
-            extension: fileInfo.ext
-        };
-
-    } catch (e) {
-        // Определяем тип ошибки для более понятного сообщения
-        if (e.name === 'OperationError') {
-            return { success: false, error: 'Неверный пароль' };
-        }
-        return { success: false, error: 'Ошибка расшифровки: ' + e.message };
-    }
-}
-
-/**
- * Создает ссылку для скачивания расшифрованного файла
- * @param {File} originalFile - оригинальный файл
- * @param {ArrayBuffer} decryptedData - расшифрованные данные
- * @param {Object} fileInfo - информация о типе файла
- * @param {HTMLElement} downloadLinks - контейнер для ссылок
- */
-function createDownloadLink(originalFile, decryptedData, fileInfo, downloadLinks) {
-    // Создаем Blob с расшифрованными данными
-    const blob = new Blob([decryptedData], { type: `image/${fileInfo.ext}` });
-    const url = URL.createObjectURL(blob);
-    
-    // Формируем имя файла
-    const originalName = originalFile.name.replace(/\.[^/.]+$/, "");
-    const fileName = `${originalName}_decrypted.${fileInfo.ext}`;
-    
-    // Создаем ссылку для скачивания
-    const downloadLink = document.createElement('a');
-    downloadLink.href = url;
-    downloadLink.download = fileName;
-    downloadLink.className = 'download-btn';
-    downloadLink.textContent = `📥 ${originalFile.name} (${fileInfo.type})`;
-    downloadLinks.appendChild(downloadLink);
-
-    // Сохраняем информацию о файле для массового скачивания
-    decryptedFiles.push({ url, name: fileName });
-}
-
-/**
  * Скачивает все расшифрованные файлы
  * Автоматически запускает скачивание каждого файла
  */
@@ -514,47 +807,8 @@ function downloadAllFiles() {
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-        }, index * 100); // Небольшая задержка между скачиваниями
+        }, index * 200); // Увеличенная задержка между скачиваниями
     });
-}
-
-/**
- * Дополнительная функция для более точной проверки изображений
- * @param {ArrayBuffer} data - данные файла
- * @param {string} expectedType - ожидаемый тип файла
- * @returns {boolean} - является ли файл валидным изображением
- */
-function validateImageFile(data, expectedType) {
-    const bytes = new Uint8Array(data);
-    
-    switch (expectedType) {
-        case 'JPEG':
-            // JPEG должен заканчиваться на FF D9
-            return bytes.length > 10 && 
-                   bytes[bytes.length - 2] === 0xFF && 
-                   bytes[bytes.length - 1] === 0xD9;
-        
-        case 'PNG':
-            // PNG должен иметь правильную структуру IHDR chunk
-            return bytes.length > 33 && 
-                   bytes[12] === 0x49 && bytes[13] === 0x48 && 
-                   bytes[14] === 0x44 && bytes[15] === 0x52; // "IHDR"
-        
-        case 'GIF':
-            // GIF должен содержать версию (87a или 89a)
-            return bytes.length > 10 && 
-                   (bytes[4] === 0x37 || bytes[4] === 0x39) && 
-                   bytes[5] === 0x61; // "7a" или "9a"
-        
-        case 'BMP':
-            // BMP имеет размер файла в заголовке, проверим его
-            if (bytes.length < 14) return false;
-            const fileSize = bytes[2] | (bytes[3] << 8) | (bytes[4] << 16) | (bytes[5] << 24);
-            return fileSize === bytes.length;
-            
-        default:
-            return true; // Для других типов пропускаем дополнительную проверку
-    }
 }
 
 // Инициализация при загрузке страницы
@@ -565,5 +819,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const dropZone = document.getElementById('drop-zone');
     dropZone.addEventListener('click', function() {
         document.getElementById('file-upload').click();
+    });
+    
+    // Добавляем обработчик для обновления карточек при изменении пароля
+    const passwordInput = document.getElementById('password');
+    passwordInput.addEventListener('input', function() {
+        // Обновляем карточки файлов при изменении пароля
+        if (selectedFiles.length > 0) {
+            updateFilesDisplay();
+        }
     });
 });
