@@ -63,7 +63,7 @@ function createFileCard(file) {
             </div>
             <button class="file-remove" onclick="removeFile('${fileId}')" title="Удалить файл">×</button>
         </div>
-        <div class="file-status pending">Ожидает обработки</div>
+        <div class="file-status ready">Готов к обработке</div>
         <div class="file-progress" id="progress_${fileId}">
             <div class="file-progress-bar"></div>
         </div>
@@ -238,7 +238,7 @@ document.getElementById('file-upload').addEventListener('change', function(e) {
 /**
  * Обновляет статус файла в карточке
  * @param {string} fileId - ID файла
- * @param {string} status - новый статус ('pending', 'processing', 'success', 'error')
+ * @param {string} status - новый статус ('ready', 'processing', 'success', 'error')
  * @param {string} message - сообщение статуса
  */
 function updateFileStatus(fileId, status, message = '') {
@@ -251,10 +251,10 @@ function updateFileStatus(fileId, status, message = '') {
     statusElement.className = `file-status ${status}`;
     
     const statusMessages = {
-        'pending': 'Ожидает обработки',
+        'ready': 'Готов к обработке',
         'processing': 'Обрабатывается...',
-        'success': message || 'Успешно расшифрован',
-        'error': message || 'Ошибка при расшифровке'
+        'success': message || 'Расшифрован',
+        'error': message || 'Ошибка'
     };
     
     statusElement.textContent = statusMessages[status] || message;
@@ -392,7 +392,7 @@ async function processFile(file, key, downloadLinks) {
 
         // Проверяем минимальный размер файла (должен содержать IV)
         if (encryptedData.byteLength < 16) {
-            return { success: false, error: 'Файл слишком маленький' };
+            return { success: false, error: 'Файл слишком мал' };
         }
 
         // Извлекаем вектор инициализации (первые 16 байт)
@@ -401,7 +401,7 @@ async function processFile(file, key, downloadLinks) {
 
         // Проверяем, есть ли зашифрованное содержимое
         if (encryptedContent.byteLength === 0) {
-            return { success: false, error: 'Нет зашифрованного содержимого' };
+            return { success: false, error: 'Пустой файл' };
         }
 
         // Расшифровываем файл
@@ -418,6 +418,11 @@ async function processFile(file, key, downloadLinks) {
         // Определяем тип файла по заголовку
         const fileInfo = detectFileType(new Uint8Array(decryptedData.slice(0, 4)));
         
+        // Проверяем, является ли расшифрованный файл изображением
+        if (fileInfo.type === 'Неизвестный') {
+            return { success: false, error: 'Не изображение или неверный пароль' };
+        }
+        
         // Создаем ссылку для скачивания
         createDownloadLink(file, decryptedData, fileInfo, downloadLinks);
 
@@ -428,7 +433,11 @@ async function processFile(file, key, downloadLinks) {
         };
 
     } catch (e) {
-        return { success: false, error: e.message };
+        // Определяем тип ошибки для более понятного сообщения
+        if (e.name === 'OperationError') {
+            return { success: false, error: 'Неверный пароль' };
+        }
+        return { success: false, error: 'Поврежденный файл' };
     }
 }
 
