@@ -19,12 +19,22 @@
 
         <div class="decryptor-card glass-card">
             <div class="form-group">
-                <label for="file-upload" class="form-label">Выберите зашифрованные файлы:</label>
-                <label for="file-upload" class="file-input-label">Выбрать файлы</label>
-                <input type="file" id="file-upload" accept="*/*" multiple>
-                <div class="file-info" id="file-info">
-                    <div class="file-list" id="file-list"></div>
+                <label class="form-label">Выберите зашифрованные файлы:</label>
+                
+                <!-- Зона перетаскивания файлов -->
+                <div class="drop-zone" id="drop-zone">
+                    <div class="drop-zone-content">
+                        <div class="upload-icon">📁</div>
+                        <h3>Перетащите файлы сюда</h3>
+                        <p>или</p>
+                        <label for="file-upload" class="file-input-label">Выбрать файлы</label>
+                        <input type="file" id="file-upload" accept="*/*" multiple>
+                        <p class="file-hint">Поддерживается множественная загрузка</p>
+                    </div>
                 </div>
+
+                <!-- Плиточки с загруженными файлами -->
+                <div class="files-grid" id="files-grid"></div>
             </div>
 
             <div class="form-group">
